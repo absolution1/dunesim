@@ -18,6 +18,7 @@
 #include "art/Framework/Core/ModuleMacros.h"
 #include "art/Framework/Principal/Event.h"
 #include "fhiclcpp/ParameterSet.h"
+#include "art/Framework/Principal/Run.h"
 #include "art/Framework/Principal/Handle.h"
 #include "art/Framework/Core/ModuleMacros.h"
 #include "art/Framework/Services/Registry/ServiceHandle.h"
@@ -122,9 +123,11 @@ namespace evgendp{
       // create a default random engine; obtain the random seed from NuRandomService,
       // unless overridden in configuration with key "Seed"
       fGenEngine(art::ServiceHandle<rndm::NuRandomService>()
-                 ->createEngine(*this, "HepJamesRandom", "gen", p, { "Seed", "SeedGenerator" })),
+                 ->registerAndSeedEngine(createEngine(0, "HepJamesRandom", "gen"),
+                                         "HepJamesRandom", "gen", p, { "Seed", "SeedGenerator" })),
       fPoisEngine(art::ServiceHandle<rndm::NuRandomService>()
-                  ->createEngine(*this, "HepJamesRandom", "pois", p, "SeedPoisson"))
+                  ->registerAndSeedEngine(createEngine(0, "HepJamesRandom", "pois"),
+                                          "HepJamesRandom", "pois", p, "SeedPoisson"))
   {
 
     if(fShowerInputFiles.size() != fShowerFluxConstants.size() || fShowerInputFiles.size()==0 || fShowerFluxConstants.size()==0)
@@ -372,9 +375,9 @@ namespace evgendp{
 
     //compute shower area based on the maximal x,z dimensions of cryostat boundaries + fShowerAreaExtension
     art::ServiceHandle<geo::Geometry> geom;
-    for(unsigned int c = 0; c < geom->Ncryostats(); ++c){
+    for(auto const& cryostat : geom->Iterate<geo::CryostatGeo>()) {
       double bounds[6] = {0.};
-      geom->CryostatBoundaries(bounds, c);
+      cryostat.Boundaries(bounds);
       for (unsigned int bnd = 0; bnd<6; bnd++){
         mf::LogVerbatim("CORSIKAGendp")<<"Cryo Boundary: "<<bnd<<"="<<bounds[bnd]<<" ( + Buffer="<<fBuffBox[bnd]<<")\n";
         if(fabs(bounds[bnd])>fabs(fShowerBounds[bnd])){
@@ -631,7 +634,7 @@ namespace evgendp{
 
     std::unique_ptr<sumdata::RunData> runcol(new sumdata::RunData(geo->DetectorName()));
 
-    run.put(std::move(runcol));
+    run.put(std::move(runcol), art::fullRun());
 
     return;
   }
@@ -661,9 +664,9 @@ namespace evgendp{
 
       // now check if the particle goes through any cryostat in the detector
       // if so, add it to the truth object.
-      for(unsigned int c = 0; c < geom->Ncryostats(); ++c){
+      for(auto const& cryostat : geom->Iterate<geo::CryostatGeo>()) {
         double bounds[6] = {0.};
-        geom->CryostatBoundaries(bounds, c);
+        cryostat.Boundaries(bounds);
 
         //add a buffer box around the cryostat bounds to increase the acceptance and account for scattering
         //By default, the buffer box has zero size
